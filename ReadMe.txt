@@ -1,3 +1,7 @@
+#1.08.2024: Added MessageGroupID. 
+Purpose: The MessageGroupId helps SQS maintain the order of messages within the same group. You can use different MessageGroupIds to achieve parallel processing of different message groups.
+
+
 Project Overview: Image Processing System
 Objective: Create an image processing system leveraging AWS services for handling image uploads, processing, and distribution.
 

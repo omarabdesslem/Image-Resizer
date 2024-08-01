@@ -10,6 +10,9 @@ import com.amazonaws.services.sqs.model.ReceiveMessageRequest;
 import com.amazonaws.services.sqs.model.SendMessageRequest;
 
 import java.io.File;
+import java.io.FileWriter;
+import java.io.IOException;
+import java.util.Scanner;
 import java.util.UUID;
 
 public class ClientApp {
@@ -19,6 +22,7 @@ public class ClientApp {
     private static final String OUTBOX_QUEUE_URL = "https://sqs.us-east-1.amazonaws.com/533267249214/outbox_sqs_image_resizer.fifo";
     private static final String LOCAL_UPLOAD_PATH = "src/main/resources/white_image.jpg"; // Change this to your upload image path
     private static final String LOCAL_DOWNLOAD_PATH = "/src/main/resources/compressed_white_image.jpg"; // Change this to your download image path
+    private static final String SEQUENCE_FILE = "sequence.txt"; // File to keep track of the sequence number
 
     private final AmazonS3 s3Client;
     private final AmazonSQS sqsClient;
@@ -43,11 +47,33 @@ public class ClientApp {
         }
     }
 
+    private int getNextSequenceNumber() throws IOException {
+        File file = new File(SEQUENCE_FILE);
+        int sequenceNumber = 0;
+
+        if (file.exists()) {
+            try (Scanner scanner = new Scanner(file)) {
+                if (scanner.hasNextInt()) {
+                    sequenceNumber = scanner.nextInt();
+                }
+            }
+        }
+
+        sequenceNumber++;
+
+        try (FileWriter writer = new FileWriter(file)) {
+            writer.write(Integer.toString(sequenceNumber));
+        }
+
+        return sequenceNumber;
+    }
+
     public void uploadImageAndProcess() {
         String imageKey = null;
         try {
-            // Generate a unique key for the image
-            imageKey = "uploads/" + UUID.randomUUID() + ".jpg";
+            // Get the next sequence number
+            int sequenceNumber = getNextSequenceNumber();
+            imageKey = "Image_to_resized_" + sequenceNumber + ".jpg";
             System.out.println("Generated unique key for the image: " + imageKey);
 
             // Upload the image to S3
@@ -61,9 +87,14 @@ public class ClientApp {
         }
 
         try {
-            // Place the key to the uploaded image in the inbox queue
+            // Place the key to the uploaded image in the inbox queue with MessageGroupId and MessageDeduplicationId
             System.out.println("Sending image key to the inbox queue...");
-            sqsClient.sendMessage(new SendMessageRequest(INBOX_QUEUE_URL, imageKey));
+            String deduplicationId = UUID.randomUUID().toString(); // Generate a unique deduplication ID
+            sqsClient.sendMessage(new SendMessageRequest()
+                    .withQueueUrl(INBOX_QUEUE_URL)
+                    .withMessageBody(imageKey)
+                    .withMessageGroupId("imageProcessingGroup") // Add MessageGroupId
+                    .withMessageDeduplicationId(deduplicationId)); // Add MessageDeduplicationId
             System.out.println("Image key sent to inbox queue.");
         } catch (Exception e) {
             System.err.println("Error sending image key to inbox queue: " + e.getMessage());
